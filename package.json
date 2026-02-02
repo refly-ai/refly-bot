@@ -21,12 +21,12 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/refly-bot.git"
+    "url": "https://github.com/refly-ai/refly-bot.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/refly-bot/issues"
+    "url": "https://github.com/refly-ai/refly-bot/issues"
   },
-  "homepage": "https://github.com/yourusername/refly-bot#readme",
+  "homepage": "https://github.com/refly-ai/refly-bot#readme",
   "engines": {
     "node": ">=14.0.0"
   },

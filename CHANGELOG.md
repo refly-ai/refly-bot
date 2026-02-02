@@ -35,4 +35,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Retry mechanism for failed operations
 - Clarification flow for ambiguous requests
 
-[1.0.0]: https://github.com/yourusername/refly-bot/releases/tag/v1.0.0
+[1.0.0]: https://github.com/refly-ai/refly-bot/releases/tag/v1.0.0

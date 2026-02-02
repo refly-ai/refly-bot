@@ -25,7 +25,7 @@ A powerful multi-platform chatbot powered by [Refly.ai](https://refly.ai), curre
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/refly-bot.git
+git clone https://github.com/refly-ai/refly-bot.git
 cd refly-bot
 ```
 

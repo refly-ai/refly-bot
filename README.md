@@ -57,7 +57,7 @@ set APP_ID=<your_app_id>&set APP_SECRET=<your_app_secret>&bootstrap.bat
 | `APP_ID` | Feishu/Lark app ID |
 | `APP_SECRET` | Feishu/Lark app secret |
 | `REFLY_API_KEY` | Refly.ai API key |
-| `REFLY_CANVAS_ID` | Refly canvas/workflow ID for AI processing |
+| `REFLY_PLANNER_CANVAS_ID` | Refly canvas/workflow ID for AI processing |
 
 ### Optional Environment Variables
 
@@ -66,7 +66,6 @@ set APP_ID=<your_app_id>&set APP_SECRET=<your_app_secret>&bootstrap.bat
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `REFLY_API_BASE_URL` | `https://api.refly.ai/v1` | Refly API base URL |
-| `REFLY_PLANNER_CANVAS_ID` | - | Separate canvas ID for planning phase |
 | `REFLY_INPUT_VAR` | `input` | Variable name for user input |
 | `REFLY_FILES_VAR` | `files` | Variable name for file attachments |
 | `REFLY_COPILOT_LOCALE` | `zh-Hans` | Locale for AI responses |

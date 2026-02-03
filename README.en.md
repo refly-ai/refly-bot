@@ -40,4 +40,14 @@ Save your credentials once to avoid re-entering them in future sessions:
 
 > **The script will automatically**: Detect/Install Node.js runtime (portable), switch to fast mirrors, install dependencies, and start the bot.
 
+---
+
+## ⭐ Enjoying this project?
+
+If you find this bot helpful, please give us a **Star** on GitHub! Your support means a lot to us.
+
+👉 **[Click here to Star on GitHub](https://github.com/refly-ai/refly)**
+
+---
+
 Made with ❤️ by the Refly community

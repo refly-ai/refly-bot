@@ -42,12 +42,12 @@ npm install
 
 **macOS/Linux:**
 ```bash
-APP_ID=<your_app_id> APP_SECRET=<your_app_secret> ./bootstrap.sh
+APP_ID=<your_app_id> APP_SECRET=<your_app_secret> REFLY_API_KEY=<your_refly_api_key> ./bootstrap.sh
 ```
 
 **Windows:**
 ```bash
-set APP_ID=<your_app_id>&set APP_SECRET=<your_app_secret>&bootstrap.bat
+set APP_ID=<your_app_id>&set APP_SECRET=<your_app_secret>&set REFLY_API_KEY=<your_refly_api_key>&bootstrap.bat
 ```
 
 ## 配置说明
@@ -59,7 +59,6 @@ set APP_ID=<your_app_id>&set APP_SECRET=<your_app_secret>&bootstrap.bat
 | `APP_ID` | 飞书/Lark 应用 ID |
 | `APP_SECRET` | 飞书/Lark 应用密钥 |
 | `REFLY_API_KEY` | Refly.ai API 密钥 |
-| `REFLY_PLANNER_CANVAS_ID` | Refly 画布/工作流 ID，用于 AI 处理 |
 
 ### 可选的环境变量
 
@@ -100,7 +99,6 @@ set APP_ID=<your_app_id>&set APP_SECRET=<your_app_secret>&bootstrap.bat
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `WORKFLOW_MAX_MINUTES` | `30` | 工作流最大执行时间（分钟）|
-| `PLANNER_MAX_MINUTES` | `5` | 规划阶段最大时间（分钟）|
 | `LARK_MAX_UPLOAD_MB` | `20` | 最大文件上传大小（MB）|
 | `LARK_MAX_DOWNLOAD_MB` | `100` | 最大文件下载大小（MB）|
 | `LARK_MAX_IMAGE_MB` | `10` | 最大图片大小（MB）|

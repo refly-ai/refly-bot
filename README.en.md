@@ -42,12 +42,12 @@ npm install
 
 **macOS/Linux:**
 ```bash
-APP_ID=<your_app_id> APP_SECRET=<your_app_secret> ./bootstrap.sh
+APP_ID=<your_app_id> APP_SECRET=<your_app_secret> REFLY_API_KEY=<your_refly_api_key> ./bootstrap.sh
 ```
 
 **Windows:**
 ```bash
-set APP_ID=<your_app_id>&set APP_SECRET=<your_app_secret>&bootstrap.bat
+set APP_ID=<your_app_id>&set APP_SECRET=<your_app_secret>&set REFLY_API_KEY=<your_refly_api_key>&bootstrap.bat
 ```
 
 ## Configuration
@@ -59,7 +59,6 @@ set APP_ID=<your_app_id>&set APP_SECRET=<your_app_secret>&bootstrap.bat
 | `APP_ID` | Feishu/Lark app ID |
 | `APP_SECRET` | Feishu/Lark app secret |
 | `REFLY_API_KEY` | Refly.ai API key |
-| `REFLY_PLANNER_CANVAS_ID` | Refly canvas/workflow ID for AI processing |
 
 ### Optional Environment Variables
 
@@ -100,7 +99,6 @@ set APP_ID=<your_app_id>&set APP_SECRET=<your_app_secret>&bootstrap.bat
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WORKFLOW_MAX_MINUTES` | `30` | Maximum workflow execution time (minutes) |
-| `PLANNER_MAX_MINUTES` | `5` | Maximum planning phase time (minutes) |
 | `LARK_MAX_UPLOAD_MB` | `20` | Maximum file upload size (MB) |
 | `LARK_MAX_DOWNLOAD_MB` | `100` | Maximum file download size (MB) |
 | `LARK_MAX_IMAGE_MB` | `10` | Maximum image size (MB) |

@@ -3,7 +3,6 @@ import * as Lark from '@larksuiteoapi/node-sdk';
 const env = process.env;
 const API_BASE_URL = (env.REFLY_API_BASE_URL ?? 'https://api.refly.ai/v1').replace(/\/$/, '');
 const API_KEY = env.REFLY_API_KEY ?? '';
-const PLANNER_CANVAS_ID = env.REFLY_PLANNER_CANVAS_ID ?? env.REFLY_CANVAS_ID ?? '';
 const VARIABLE_INPUT = env.REFLY_INPUT_VAR ?? 'input';
 const VARIABLE_FILES = env.REFLY_FILES_VAR ?? 'files';
 const COPILOT_LOCALE = env.REFLY_COPILOT_LOCALE ?? 'zh-Hans';
@@ -14,7 +13,6 @@ const MAX_LARK_UPLOAD_MB = Number(env.LARK_MAX_UPLOAD_MB ?? 20);
 const MAX_LARK_DOWNLOAD_MB = Number(env.LARK_MAX_DOWNLOAD_MB ?? 100);
 const MAX_LARK_IMAGE_MB = Number(env.LARK_MAX_IMAGE_MB ?? 10);
 const MAX_WORKFLOW_MINUTES = Number(env.WORKFLOW_MAX_MINUTES ?? 30);
-const PLANNER_MAX_MINUTES = Number(env.PLANNER_MAX_MINUTES ?? 5);
 const POLL_INTERVAL_MS = Number(env.WORKFLOW_POLL_INTERVAL_MS ?? 3000);
 const OUTPUT_INTERVAL_MS = Number(env.WORKFLOW_OUTPUT_INTERVAL_MS ?? 5000);
 const STATUS_NOTIFY_INTERVAL_MS = Number(env.WORKFLOW_STATUS_NOTIFY_INTERVAL_MS ?? 5000);
@@ -3219,113 +3217,6 @@ const buildOutputSummary = (messages) => {
   return summaryLines.join('\n');
 };
 
-const runPlannerWorkflow = async ({
-  chatId,
-  chatType,
-  messageId,
-  sender,
-  inputText,
-  fileKeys,
-  requestKey,
-  sessionKey,
-}) => {
-  if (!PLANNER_CANVAS_ID) {
-    throw new Error('缺少规划Skills canvasId');
-  }
-  const variables = {
-    [VARIABLE_INPUT]: inputText,
-    ...(fileKeys?.length ? { [VARIABLE_FILES]: fileKeys } : {}),
-  };
-
-  logInfo('触发规划Skills', { canvasId: PLANNER_CANVAS_ID });
-  const { data, ok } = await requestJson(
-    `${API_BASE_URL}/openapi/workflow/${PLANNER_CANVAS_ID}/run`,
-    {
-      method: 'POST',
-      headers: { ...buildHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ variables }),
-    },
-  );
-
-  if (!ok || !data?.success) {
-    throw new Error(`触发规划Skills失败: ${JSON.stringify(data)}`);
-  }
-
-  const executionId = data?.data?.executionId;
-  if (!executionId) {
-    throw new Error('未获取到规划 executionId');
-  }
-  logInfo('规划执行已启动', { executionId });
-
-  activeExecutions.set(requestKey, {
-    executionId,
-    startedAt: Date.now(),
-    stage: 'planner',
-    sessionKey,
-    userKey: buildUserKey(sender, sessionKey),
-    normalizedText: normalizeRequestText(inputText),
-  });
-
-  const deadline = Date.now() + PLANNER_MAX_MINUTES * 60 * 1000;
-
-  while (true) {
-    if (Date.now() > deadline) {
-      await sendTextMessage({
-        chatId,
-        chatType,
-        messageId,
-        sender,
-        text: `理解需求超时，请稍后再试。执行 ID：${executionId}`,
-      });
-      throw new Error('规划Skills执行超时');
-    }
-
-    const statusRes = await requestJson(
-      `${API_BASE_URL}/openapi/workflow/${executionId}/status`,
-      { headers: buildHeaders() },
-    );
-
-    if (!statusRes.ok || !statusRes.data?.success) {
-      throw new Error(`获取规划状态失败: ${JSON.stringify(statusRes.data)}`);
-    }
-
-    const status = statusRes.data?.data?.status;
-    if (status === 'finish' || status === 'failed') {
-      if (status === 'failed') {
-        logWarn('规划执行失败', { executionId });
-        await sendProgressCard({
-          chatId,
-          chatType,
-          messageId,
-          sender,
-          requestKey,
-          title: '需求理解失败',
-          statusText: '失败',
-          stageText: '需求理解',
-          etaText: '已终止',
-          summaryText: '需求理解失败，请稍后重试。',
-          showAbort: false,
-        });
-        throw new Error('规划Skills失败');
-      }
-      logInfo('规划执行完成', { executionId });
-      break;
-    }
-
-    await sleep(POLL_INTERVAL_MS);
-  }
-
-  const outputRes = await requestJson(
-    `${API_BASE_URL}/openapi/workflow/${executionId}/output`,
-    { headers: buildHeaders() },
-  );
-  if (!outputRes.ok || !outputRes.data?.success) {
-    throw new Error(`获取规划输出失败: ${JSON.stringify(outputRes.data)}`);
-  }
-  logInfo('规划输出已获取', { executionId });
-  return outputRes.data?.data ?? {};
-};
-
 const runWorkflow = async ({
   chatId,
   chatType,
@@ -4773,7 +4664,6 @@ if (!BOT_USER_ID && !BOT_OPEN_ID) {
 wsClient.start({ eventDispatcher });
 logInfo('机器人已启动', {
   apiBaseUrl: API_BASE_URL,
-  plannerCanvasId: PLANNER_CANVAS_ID,
   locale: COPILOT_LOCALE,
   logLevel: LOG_LEVEL,
 });

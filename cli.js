@@ -112,7 +112,8 @@ async function setup() {
     }
   }
 
-  // B. 加载本地 .env (作为备选)
+  // B. 加载本地 .env (作为备选，在当前执行目录下查找)
+  const envPath = join(process.cwd(), '.env');
   if (existsSync(envPath)) {
     const lines = readFileSync(envPath, 'utf8').split('\n');
     lines.forEach(line => {

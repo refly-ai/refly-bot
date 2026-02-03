@@ -1,6 +1,6 @@
 {
   "name": "refly-bot",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A powerful multi-platform chatbot powered by Refly.ai",
   "main": "index.js",
   "bin": {

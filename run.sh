@@ -30,5 +30,5 @@ if [ -f "$WORK_DIR/cli.js" ]; then
     node "$WORK_DIR/cli.js"
 else
     echo "Starting via npx..."
-    npx refly-bot -y
+    npx --yes refly-bot
 fi

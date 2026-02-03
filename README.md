@@ -34,7 +34,7 @@
   ```bash
   mkdir -p ~/.refly && echo '{"APP_ID":"ID","APP_SECRET":"KEY","REFLY_API_KEY":"AIKEY"}' > ~/.refly/refly-bot.json
   ```
-**配置完成后**，未来只需运行一行：`sh run.sh` (Mac / Linux) 或 `.\run.bat` (Windows) 即可。
+**配置完成后**，未来再次运行上述“一键启动”指令即可直接进入机器人，无需再次输入变量。
 
 ---
 

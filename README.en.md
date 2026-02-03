@@ -34,7 +34,7 @@ Save your credentials once to avoid re-entering them in future sessions:
   ```bash
   mkdir -p ~/.refly && echo '{"APP_ID":"ID","APP_SECRET":"KEY","REFLY_API_KEY":"AIKEY"}' > ~/.refly/refly-bot.json
   ```
-**After setup**, simply run `sh run.sh` (Mac / Linux) or `.\run.bat` (Windows) in the future.
+**After setup**, simply run the "Quick Start" command again to start the bot directly without re-entering variables.
 
 ---
 

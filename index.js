@@ -432,14 +432,32 @@ const buildAiSearchRequestBody = (query) => {
 
 const fetchAiSearchResults = async (query) => {
   const endpoint = resolveAiSearchEndpoint();
-  if (!endpoint || !query) return [];
+  if (!endpoint || !query) {
+    logInfo('[AI Search] 跳过：未启用或查询为空', { enabled: Boolean(endpoint), hasQuery: Boolean(query) });
+    return [];
+  }
+
+  logInfo('[AI Search] 开始请求', {
+    query: truncateText(query, 100),
+    endpoint,
+    mode: AI_SEARCH_MODE,
+    topK: AI_SEARCH_TOP_K,
+    minScore: AI_SEARCH_MIN_SCORE,
+    timeout: AI_SEARCH_TIMEOUT_MS
+  });
+
   const headers = { 'content-type': 'application/json; charset=utf-8' };
   if (AI_SEARCH_API_TOKEN) {
     headers.Authorization = `Bearer ${AI_SEARCH_API_TOKEN}`;
+    logInfo('[AI Search] 使用 API Token 认证');
   }
   const body = buildAiSearchRequestBody(query);
+  logInfo('[AI Search] 请求体', { body });
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), AI_SEARCH_TIMEOUT_MS);
+  const startTime = Date.now();
+
   try {
     const res = await fetch(endpoint, {
       method: 'POST',
@@ -447,25 +465,40 @@ const fetchAiSearchResults = async (query) => {
       body: JSON.stringify(body),
       signal: controller.signal,
     });
+
+    const elapsed = Date.now() - startTime;
+    logInfo('[AI Search] 收到响应', { status: res.status, elapsed: `${elapsed}ms` });
+
     let data = null;
     try {
       data = await res.json();
     } catch (_error) {
+      logWarn('[AI Search] 响应解析失败', { error: _error?.message });
       data = null;
     }
+
     if (!res.ok) {
-      logWarn('AI Search 响应失败', { status: res.status, data });
+      logWarn('[AI Search] 响应失败', { status: res.status, data });
       return [];
     }
+
     const items = normalizeAiSearchItems(data);
-    logInfo('AI Search 结果', {
-      count: items.length,
-      query: truncateText(query, 120),
-      items: buildAiSearchLogItems(items),
+    logInfo('[AI Search] 结果解析完成', {
+      itemCount: items.length,
+      hasScores: items.some(item => typeof item.score === 'number'),
+      scores: items.map(item => item.score).filter(s => s !== null),
+      items: buildAiSearchLogItems(items)
     });
+
     return items;
   } catch (error) {
-    logWarn('AI Search 请求失败', { message: error?.message || String(error) });
+    const elapsed = Date.now() - startTime;
+    const isTimeout = error?.name === 'AbortError';
+    logWarn('[AI Search] 请求失败', {
+      message: error?.message || String(error),
+      isTimeout,
+      elapsed: `${elapsed}ms`
+    });
     return [];
   } finally {
     clearTimeout(timer);
@@ -473,12 +506,25 @@ const fetchAiSearchResults = async (query) => {
 };
 
 const buildAiSearchContext = (items) => {
+  logInfo('[AI Search] 构建上下文', { totalItems: items.length });
+
   const filtered = items
     .filter((item) =>
       typeof item.score === 'number' ? item.score >= AI_SEARCH_MIN_SCORE : true,
     )
     .slice(0, Math.max(0, AI_SEARCH_TOP_K || 0));
-  if (!filtered.length) return '';
+
+  logInfo('[AI Search] 过滤后结果', {
+    filteredCount: filtered.length,
+    minScore: AI_SEARCH_MIN_SCORE,
+    topK: AI_SEARCH_TOP_K
+  });
+
+  if (!filtered.length) {
+    logInfo('[AI Search] 无有效结果，跳过上下文增强');
+    return '';
+  }
+
   const blocks = filtered.map((item, index) => {
     const title = item.title ? truncateText(item.title, 80) : `文档${index + 1}`;
     const content = item.content
@@ -495,7 +541,15 @@ const buildAiSearchContext = (items) => {
     return lines.join('\n');
   });
   const text = `以下是与问题相关的参考资料（来自检索结果，仅供参考）：\n${blocks.join('\n\n')}`;
-  return truncateText(text, AI_SEARCH_MAX_CONTEXT_CHARS);
+  const truncated = truncateText(text, AI_SEARCH_MAX_CONTEXT_CHARS);
+
+  logInfo('[AI Search] 上下文构建完成', {
+    contextLength: truncated.length,
+    maxLength: AI_SEARCH_MAX_CONTEXT_CHARS,
+    isTruncated: truncated.length < text.length
+  });
+
+  return truncated;
 };
 
 const buildAiSearchLogItems = (items) =>
@@ -507,11 +561,30 @@ const buildAiSearchLogItems = (items) =>
   }));
 
 const augmentQueryWithAiSearch = async (query) => {
-  if (!query || !isAiSearchEnabled()) return { query, context: '' };
+  if (!query || !isAiSearchEnabled()) {
+    logInfo('[AI Search] 查询增强跳过', { hasQuery: Boolean(query), enabled: isAiSearchEnabled() });
+    return { query, context: '' };
+  }
+
+  logInfo('[AI Search] 开始查询增强', { originalQueryLength: query.length });
+
   const results = await fetchAiSearchResults(query);
   const context = buildAiSearchContext(results);
-  if (!context) return { query, context: '' };
-  return { query: `${query}\n\n${context}`, context };
+
+  if (!context) {
+    logInfo('[AI Search] 无上下文，返回原始查询');
+    return { query, context: '' };
+  }
+
+  const augmentedQuery = `${query}\n\n${context}`;
+  logInfo('[AI Search] 查询增强完成', {
+    originalLength: query.length,
+    contextLength: context.length,
+    augmentedLength: augmentedQuery.length,
+    resultsUsed: results.length
+  });
+
+  return { query: augmentedQuery, context };
 };
 
 const formatBytes = (bytes) => {
@@ -684,6 +757,12 @@ const isBotMentioned = (mentions) => {
     logWarn('未设置 BOT_USER_ID/BOT_OPEN_ID，无法判断 @ 目标，已忽略群聊消息');
     return false;
   }
+  logDebug('检查 mention 匹配', {
+    mentionCount: mentions.length,
+    mentions: mentions.map(m => ({ userId: m?.id?.user_id, openId: m?.id?.open_id })),
+    botUserId: BOT_USER_ID,
+    botOpenId: BOT_OPEN_ID
+  });
   const matched = mentions.some(
     (mention) =>
       mention?.id?.user_id === BOT_USER_ID || mention?.id?.open_id === BOT_OPEN_ID,
@@ -1522,7 +1601,7 @@ const buildArtifactsCardContent = ({
             elements: [
               {
                 tag: 'markdown',
-                content: truncateTextFromEnd(textContent, CARD_TEXT_MAX_LENGTH),
+                content: textContent,
                 text_align: 'left',
                 text_size: 'normal',
               },
@@ -1552,6 +1631,17 @@ const buildArtifactsCardContent = ({
       elements.push({ tag: 'hr', margin: '8px 0px 12px 0px' });
     }
   });
+
+  // 艾特原用户
+  if (sender?.id) {
+    elements.push({
+      tag: 'markdown',
+      content: `${buildCardMentionTag(sender)} 你的 Skills 已执行完成`,
+      text_align: 'left',
+      text_size: 'normal',
+      margin: '8px 0px 8px 0px',
+    });
+  }
 
   elements.push({
     tag: 'markdown',
@@ -2727,6 +2817,19 @@ const normalizeErrorText = (value) => {
   }
 };
 
+const normalizeTerminology = (text) => {
+  if (!text || typeof text !== 'string') return text;
+  return text
+    .replace(/工作流/g, 'Skills')
+    .replace(/workflow/gi, 'Skills')
+    .replace(/Copilot Agent/g, 'Skills Agent')
+    .replace(/Copilot/g, 'Skills')
+    .replace(/copilot/g, 'Skills')
+    .replace(/vibe 工作流/g, 'vibe Skills')
+    .replace(/节点/g, '步骤')
+    .replace(/任务节点/g, '任务步骤');
+};
+
 const buildFailureReasonLine = (nodeExecutions, lastErrorMap, limit = 3) => {
   if (!Array.isArray(nodeExecutions) || nodeExecutions.length === 0) return '';
   const failedNodes = nodeExecutions.filter(
@@ -2745,7 +2848,7 @@ const buildFailureReasonLine = (nodeExecutions, lastErrorMap, limit = 3) => {
     }
     const errorText = directError || fallbackError;
     if (errorText) {
-      details.push(`${title} - ${truncateText(errorText, 120)}`);
+      details.push(`${title} - ${errorText}`);
     }
     if (details.length >= limit) break;
   }
@@ -3630,13 +3733,9 @@ const runWorkflow = async ({
                 isTerminalNode(node?.nodeId || node?.node_id, node?.title),
               )
             : outputNodes;
-          const filteredFiles = hasTerminalFilter
-            ? files.filter((file) => {
-                const nodeId = file?.nodeId || file?.node_id;
-                if (!nodeId) return true;
-                return isTerminalNode(nodeId, '');
-              })
-            : files;
+
+          // 文件产物：显示所有节点的所有文件，不进行过滤
+          const filteredFiles = files;
           displayOutputNodes =
             hasTerminalFilter &&
             filteredOutputNodes.length === 0 &&
@@ -4007,7 +4106,20 @@ const startPendingRequest = async (sessionKey) => {
       latestUserMessage: userContent,
     });
     const resolvedQuery = generateQuery || userContent || rawInputText;
-    const { query: finalQuery } = await augmentQueryWithAiSearch(resolvedQuery);
+
+    logInfo('[Copilot] 准备调用 AI Search 增强查询', {
+      hasQuery: Boolean(resolvedQuery),
+      queryLength: resolvedQuery?.length
+    });
+
+    const { query: finalQuery, context: searchContext } = await augmentQueryWithAiSearch(resolvedQuery);
+
+    if (searchContext) {
+      logInfo('[Copilot] AI Search 上下文已添加到查询', {
+        contextLength: searchContext.length,
+        finalQueryLength: finalQuery.length
+      });
+    }
 
     let generated = null;
     try {
@@ -4079,9 +4191,9 @@ const startPendingRequest = async (sessionKey) => {
       const errorText = normalizeErrorText(error?.message || error);
       const isModelResponse = Boolean(error?.isModelResponse);
       const summaryText = isModelResponse
-        ? truncateText(errorText, 600)
+        ? normalizeTerminology(errorText)
         : errorText
-          ? `生成Skills失败：${truncateText(errorText, 200)}\n请补充需求后再次提交。`
+          ? `生成Skills失败：${errorText}\n请补充需求后再次提交。`
           : '生成Skills失败，请补充需求后再次提交。';
       clarifySessions.set(sessionKey, { history: nextUserHistory, files: mergedFiles });
       await sendProgressCard({
@@ -4098,7 +4210,7 @@ const startPendingRequest = async (sessionKey) => {
         showInput: true,
         forceInput: true,
         showAbort: false,
-        inputPlaceholder: '请补充需求，或输入“中止”终止任务',
+        inputPlaceholder: '请补充需求，或输入"中止"终止任务',
       });
       return;
     }

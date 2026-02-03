@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "A powerful multi-platform chatbot powered by Refly.ai",
   "main": "index.js",
+  "bin": {
+    "refly-bot": "cli.js"
+  },
   "type": "module",
   "scripts": {
     "start": "node index.js",

@@ -10,7 +10,7 @@ A powerful multi-platform chatbot powered by [Refly.ai](https://refly.ai).
 
 Before running, ensure you have your Feishu/Lark app credentials and Refly.ai API Key.
 
-👉 **[Click here: Key Setup Guide](https://powerformer.feishu.cn/wiki/YxMRwsQFriAMNukKr5Yc9OjMnnf)**
+👉 **[Click here: Key Setup Guide](https://powerformer.feishu.cn/wiki/Gz4swMzn0izknZki3g4coSgvnNe)**
 
 ---
 

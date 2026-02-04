@@ -10,7 +10,7 @@
 
 在运行机器人之前，你需要准备好飞书/Lark 的应用凭证以及 Refly.ai 的 API Key。
 
-👉 **[点击查看：Key 获取指引](https://powerformer.feishu.cn/wiki/YxMRwsQFriAMNukKr5Yc9OjMnnf)**
+👉 **[点击查看：Key 获取指引](https://powerformer.feishu.cn/wiki/Gz4swMzn0izknZki3g4coSgvnNe)**
 
 ---
 

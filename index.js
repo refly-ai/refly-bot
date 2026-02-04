@@ -99,7 +99,14 @@ const findPendingByRequestKey = (requestKey) => {
   return null;
 };
 
-const cancelByRequestKey = async ({ requestKey, chatId, chatType, messageId, sender }) => {
+const cancelByRequestKey = async ({
+  requestKey,
+  executionId: executionIdOverride,
+  chatId,
+  chatType,
+  messageId,
+  sender,
+}) => {
   if (!requestKey) return { ok: false, stage: 'missing' };
 
   const pendingEntry = findPendingByRequestKey(requestKey);
@@ -111,10 +118,54 @@ const cancelByRequestKey = async ({ requestKey, chatId, chatType, messageId, sen
     return { ok: true, stage: 'pending' };
   }
 
-  const running = activeExecutions.get(requestKey);
-  if (running?.executionId) {
+  const sessionKey = extractSessionKeyFromRequestKey(requestKey);
+  if (sessionKey && clarifySessions.has(sessionKey)) {
+    clarifySessions.delete(sessionKey);
+    await sendProgressCard({
+      chatId,
+      chatType,
+      messageId,
+      sender,
+      requestKey,
+      title: '已中止',
+      statusText: '已中止',
+      stageText: '需求澄清',
+      etaText: '已终止',
+      summaryText: '已中止当前任务。',
+      showAbort: false,
+      showInput: false,
+    });
+    return { ok: true, stage: 'clarify' };
+  }
+
+  let executionId = executionIdOverride;
+  if (!executionId) {
+    const running = activeExecutions.get(requestKey);
+    executionId = running?.executionId;
+  }
+
+  let executionStatus = '';
+  if (executionId) {
+    try {
+      const statusRes = await requestJson(
+        `${API_BASE_URL}/openapi/workflow/${executionId}/status`,
+        { headers: buildHeaders() },
+      );
+      if (statusRes.ok && statusRes.data?.success) {
+        executionStatus = statusRes.data?.data?.status || '';
+      }
+    } catch (error) {
+      logWarn('查询执行状态失败', { requestKey, error: formatErrorDetails(error) });
+    }
+  }
+
+  if (['finish', 'failed', 'timeout'].includes(executionStatus)) {
+    return { ok: false, stage: 'ended', status: executionStatus };
+  }
+
+  if (executionId) {
     const abortRes = await requestJson(
-      `${API_BASE_URL}/openapi/workflow/${running.executionId}/abort`,
+      `${API_BASE_URL}/openapi/workflow/${executionId}/abort`,
       { method: 'POST', headers: { ...buildHeaders(), 'Content-Type': 'application/json' } },
     );
     const ok = Boolean(abortRes.ok && abortRes.data?.success);
@@ -1031,6 +1082,7 @@ const buildProgressCardContent = ({
   requestId,
   showInput,
   showAbort,
+  abortValue,
   showRetry,
   retryAction,
   retryLabel,
@@ -1185,7 +1237,7 @@ const buildProgressCardContent = ({
                   text: { tag: 'plain_text', content: '提交补充' },
                   type: 'primary',
                   action_type: 'form_submit',
-                  value: { action: 'clarify_submit', source: 'refly_progress' },
+                  value: { action: 'clarify_submit', source: 'refly_progress', requestKey: requestId },
                   name: 'clarify_submit',
                 },
               ],
@@ -1198,6 +1250,12 @@ const buildProgressCardContent = ({
   }
 
   if (showAbort) {
+    const abortPayload = {
+      action: CARD_ABORT_ACTION,
+      source: 'refly_progress',
+      requestKey: requestId,
+      ...(abortValue || {}),
+    };
     elements.push({
       tag: 'button',
       text: { tag: 'plain_text', content: '中止任务' },
@@ -1205,7 +1263,7 @@ const buildProgressCardContent = ({
       behaviors: [
         {
           type: 'callback',
-          value: { action: CARD_ABORT_ACTION, source: 'refly_progress' },
+          value: abortPayload,
         },
       ],
       name: 'abort_button',
@@ -1215,17 +1273,21 @@ const buildProgressCardContent = ({
 
   if (showRetry) {
     elements.push({
-      tag: 'button',
-      text: { tag: 'plain_text', content: retryLabel || '重试' },
-      type: 'primary',
-      behaviors: [
-        {
-          type: 'callback',
-          value: { action: retryAction || CARD_RETRY_GENERATE_ACTION, source: 'refly_progress' },
-        },
-      ],
-      name: 'retry_button',
-      margin: '8px 0px 0px 0px',
+          tag: 'button',
+          text: { tag: 'plain_text', content: retryLabel || '重试' },
+          type: 'primary',
+          behaviors: [
+            {
+              type: 'callback',
+              value: {
+                action: retryAction || CARD_RETRY_GENERATE_ACTION,
+                source: 'refly_progress',
+                requestKey: requestId,
+              },
+            },
+          ],
+          name: 'retry_button',
+          margin: '8px 0px 0px 0px',
     });
   }
 
@@ -1774,28 +1836,34 @@ const buildProgressSignature = ({
   summaryText,
   showInput,
   showAbort,
+  abortValue,
   showRetry,
   retryAction,
   retryLabel,
   inputPlaceholder,
   latestInput,
 }) =>
-  [
-    title,
-    statusText,
-    stageText,
-    etaText,
-    summaryText,
-    showInput,
-    showAbort,
-    showRetry,
-    retryAction,
-    retryLabel,
-    inputPlaceholder,
-    latestInput,
-  ]
-    .map((value) => value ?? '')
-    .join('|');
+  {
+    const abortSignature =
+      abortValue && typeof abortValue === 'object' ? safeStringify(abortValue) : abortValue;
+    return [
+      title,
+      statusText,
+      stageText,
+      etaText,
+      summaryText,
+      showInput,
+      showAbort,
+      abortSignature,
+      showRetry,
+      retryAction,
+      retryLabel,
+      inputPlaceholder,
+      latestInput,
+    ]
+      .map((value) => value ?? '')
+      .join('|');
+  };
 
 const deleteProgressMessage = async (requestKey) => {
   if (!requestKey) return;
@@ -1891,6 +1959,7 @@ const sendProgressCard = async ({
   summaryText,
   showInput,
   showAbort,
+  abortValue,
   showRetry,
   retryAction,
   retryLabel,
@@ -1919,6 +1988,7 @@ const sendProgressCard = async ({
     summaryText: summaryText ?? fallbackText,
     showInput: allowInput,
     showAbort,
+    abortValue,
     showRetry,
     retryAction,
     retryLabel,
@@ -1989,6 +2059,7 @@ const sendProgressCard = async ({
     requestId: requestKey,
     showInput: allowInput,
     showAbort,
+    abortValue,
     showRetry,
     retryAction,
     retryLabel,
@@ -3315,6 +3386,7 @@ const runWorkflow = async ({
     etaText: `最长 ${MAX_WORKFLOW_MINUTES} 分钟`,
     summaryText: `执行 ID：${executionId}`,
     showAbort: true,
+    abortValue: { executionId },
   });
 
   const seenMessageIds = new Set();
@@ -3398,6 +3470,7 @@ const runWorkflow = async ({
         etaText: `最长 ${MAX_WORKFLOW_MINUTES} 分钟`,
         summaryText: summary,
         showAbort: true,
+        abortValue: { executionId },
       });
       lastStatus = status;
       lastNotifyAt = Date.now();
@@ -3496,6 +3569,7 @@ const runWorkflow = async ({
             etaText: `最长 ${MAX_WORKFLOW_MINUTES} 分钟`,
             summaryText: summaryParts.join('\n'),
             showAbort: true,
+            abortValue: { executionId },
           });
         }
       }
@@ -3768,6 +3842,22 @@ const extractSessionKeyFromRequestKey = (requestKey) => {
   const index = requestKey.lastIndexOf(':');
   if (index <= 0) return '';
   return requestKey.slice(0, index);
+};
+
+const bootstrapProgressState = ({ requestKey, messageId, startedAt }) => {
+  if (!requestKey || !messageId) return;
+  const existing = progressStates.get(requestKey);
+  if (existing?.messageId) return;
+  progressStates.set(requestKey, {
+    mode: 'card',
+    messageId,
+    lastSignature: '',
+    title: existing?.title ?? '',
+    latestInput: existing?.latestInput ?? '',
+    inputLocked: existing?.inputLocked ?? false,
+    autoDelete: false,
+    startedAt: startedAt || Date.now(),
+  });
 };
 
 const findLatestExecution = (sessionKey) => {
@@ -4546,13 +4636,30 @@ const handleCardAction = async (data) => {
   }
 
   const progressEntry = findProgressByMessageId(messageId);
-  const requestKey = progressEntry?.requestKey;
+  const requestKey = action?.value?.requestKey || progressEntry?.requestKey;
   if (!requestKey) {
     return { toast: { type: 'warning', content: '卡片已过期，请直接回复本会话' } };
   }
 
+  // 用卡片回调的 messageId 恢复进度状态，避免更新时重建卡片
+  bootstrapProgressState({
+    requestKey,
+    messageId,
+    startedAt: Date.now(),
+  });
+
   if (isAbortCardAction(action)) {
-    const result = await cancelByRequestKey({ requestKey, chatId, chatType, messageId, sender });
+    const result = await cancelByRequestKey({
+      requestKey,
+      executionId: action?.value?.executionId,
+      chatId,
+      chatType,
+      messageId,
+      sender,
+    });
+    if (result.stage === 'ended') {
+      return { toast: { type: 'info', content: '任务已结束' } };
+    }
     if (result.ok) {
       return { toast: { type: 'info', content: '已尝试中止任务' } };
     }
@@ -4577,7 +4684,17 @@ const handleCardAction = async (data) => {
   }
 
   if (CANCEL_PATTERN.test(inputText)) {
-    const result = await cancelByRequestKey({ requestKey, chatId, chatType, messageId, sender });
+    const result = await cancelByRequestKey({
+      requestKey,
+      executionId: action?.value?.executionId,
+      chatId,
+      chatType,
+      messageId,
+      sender,
+    });
+    if (result.stage === 'ended') {
+      return { toast: { type: 'info', content: '任务已结束' } };
+    }
     if (result.ok) {
       return { toast: { type: 'info', content: '已尝试中止任务' } };
     }

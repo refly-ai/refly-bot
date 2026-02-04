@@ -23,15 +23,15 @@ Copy and run (replace `xxx` with actual keys):
 
 - **🍎 Mac / 🐧 Linux**:
   ```bash
-  curl -sSL https://raw.githubusercontent.com/refly-ai/refly-bot/main/run.sh?version=2 | APP_ID=xxx APP_SECRET=xxx REFLY_API_KEY=xxx bash
+  curl -sSL 'https://raw.githubusercontent.com/refly-ai/refly-bot/main/run.sh?version=2' | APP_ID=xxx APP_SECRET=xxx REFLY_API_KEY=xxx bash
   ```
 - **🪟 Windows (PowerShell)**:
   ```powershell
-  $env:APP_ID="xxx"; $env:APP_SECRET="xxx"; $env:REFLY_API_KEY="xxx"; iwr https://raw.githubusercontent.com/refly-ai/refly-bot/main/run.bat?version=2 -OutFile run.bat; .\run.bat
+  $env:APP_ID="xxx"; $env:APP_SECRET="xxx"; $env:REFLY_API_KEY="xxx"; iwr 'https://raw.githubusercontent.com/refly-ai/refly-bot/main/run.bat?version=2' -OutFile run.bat; .\run.bat
   ```
 - **🪟 Windows (CMD)**:
   ```batch
-  set APP_ID=xxx& set APP_SECRET=xxx& set REFLY_API_KEY=xxx& curl -L https://raw.githubusercontent.com/refly-ai/refly-bot/main/run.bat?version=2 -o run.bat && run.bat
+  set APP_ID=xxx& set APP_SECRET=xxx& set REFLY_API_KEY=xxx& curl -L "https://raw.githubusercontent.com/refly-ai/refly-bot/main/run.bat?version=2" -o run.bat && run.bat
   ```
 
 ### Option B: Persistent Global Config (Recommended)

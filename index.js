@@ -16,6 +16,7 @@ const MAX_WORKFLOW_MINUTES = Number(env.WORKFLOW_MAX_MINUTES ?? 30);
 const POLL_INTERVAL_MS = Number(env.WORKFLOW_POLL_INTERVAL_MS ?? 3000);
 const OUTPUT_INTERVAL_MS = Number(env.WORKFLOW_OUTPUT_INTERVAL_MS ?? 5000);
 const STATUS_NOTIFY_INTERVAL_MS = Number(env.WORKFLOW_STATUS_NOTIFY_INTERVAL_MS ?? 5000);
+const PROGRESS_TIME_ONLY_UPDATE_MS = Number(env.PROGRESS_TIME_ONLY_UPDATE_MS ?? 30000);
 const MERGE_WINDOW_MS = Number(env.REQUEST_MERGE_WINDOW_MS ?? 3000);
 const MERGE_NOTICE_TEXT = env.MERGE_NOTICE_TEXT ?? '收到，已合并。';
 const PROGRESS_PLANNER_TEXT = env.PROGRESS_PLANNER_TEXT ?? '正在理解需求...';
@@ -1971,21 +1972,38 @@ const sendProgressCard = async ({
 }) => {
   const fallbackText = summaryText || statusText || '处理中...';
   const state = progressStates.get(requestKey);
+  const now = Date.now();
   const titleSource = title && title !== '进度更新' ? title : state?.title ?? title;
   const resolvedTitle = resolveProgressTitle(titleSource, statusText, stageText);
   const resolvedLatestInput = latestInput ?? state?.latestInput;
-  const startedAt = state?.startedAt ?? Date.now();
+  const startedAt = state?.startedAt ?? now;
   const elapsedText = formatElapsed(startedAt);
   const resolvedEtaText = elapsedText || etaText;
   const isLocked = progressInputLocks.has(requestKey) || state?.inputLocked;
   const allowInput = forceInput ? true : Boolean(showInput) && !isLocked;
   const resolvedAutoDelete = autoDelete ?? state?.autoDelete;
+  const summaryForSignature = summaryText ?? fallbackText;
   const signature = buildProgressSignature({
     title: resolvedTitle,
     statusText,
     stageText,
     etaText: resolvedEtaText,
-    summaryText: summaryText ?? fallbackText,
+    summaryText: summaryForSignature,
+    showInput: allowInput,
+    showAbort,
+    abortValue,
+    showRetry,
+    retryAction,
+    retryLabel,
+    inputPlaceholder,
+    latestInput: resolvedLatestInput,
+  });
+  const stableSignature = buildProgressSignature({
+    title: resolvedTitle,
+    statusText,
+    stageText,
+    etaText: '',
+    summaryText: summaryForSignature,
     showInput: allowInput,
     showAbort,
     abortValue,
@@ -2003,6 +2021,14 @@ const sendProgressCard = async ({
   if (state?.lastSignature === signature) {
     return;
   }
+  const hasStableSignature = typeof state?.stableSignature === 'string';
+  const isTimeOnlyChange = hasStableSignature && state.stableSignature === stableSignature;
+  if (isTimeOnlyChange && PROGRESS_TIME_ONLY_UPDATE_MS > 0) {
+    const lastUpdatedAt = state?.lastUpdatedAt ?? 0;
+    if (lastUpdatedAt && now - lastUpdatedAt < PROGRESS_TIME_ONLY_UPDATE_MS) {
+      return;
+    }
+  }
   if (state?.mode === 'post') {
     try {
       const newId = await sendProgressPostMessage({
@@ -2014,16 +2040,16 @@ const sendProgressCard = async ({
         stageText,
         etaText: resolvedEtaText,
         summaryText,
-      requestId: requestKey,
-      showInput: allowInput,
-      showAbort,
-      showRetry,
-      retryAction,
-      retryLabel,
-      inputPlaceholder,
-      latestInput: resolvedLatestInput,
-      existingMessageId: state.messageId,
-    });
+        requestId: requestKey,
+        showInput: allowInput,
+        showAbort,
+        showRetry,
+        retryAction,
+        retryLabel,
+        inputPlaceholder,
+        latestInput: resolvedLatestInput,
+        existingMessageId: state.messageId,
+      });
       if (newId) {
         const nextLocked = forceInput ? false : lockInput ? true : state?.inputLocked;
         if (forceInput) {
@@ -2035,11 +2061,13 @@ const sendProgressCard = async ({
           mode: 'post',
           messageId: newId,
           lastSignature: signature,
+          stableSignature,
           title: resolvedTitle,
           latestInput: resolvedLatestInput,
           inputLocked: nextLocked,
           autoDelete: resolvedAutoDelete,
           startedAt,
+          lastUpdatedAt: now,
         });
         return;
       }
@@ -2076,6 +2104,24 @@ const sendProgressCard = async ({
           data: {
             content: cardContent,
           },
+        });
+        const nextLocked = forceInput ? false : lockInput ? true : state?.inputLocked;
+        if (forceInput) {
+          progressInputLocks.delete(requestKey);
+        } else if (lockInput) {
+          progressInputLocks.add(requestKey);
+        }
+        progressStates.set(requestKey, {
+          mode: 'card',
+          messageId: existingMessageId,
+          lastSignature: signature,
+          stableSignature,
+          title: resolvedTitle,
+          latestInput: resolvedLatestInput,
+          inputLocked: nextLocked,
+          autoDelete: resolvedAutoDelete,
+          startedAt,
+          lastUpdatedAt: now,
         });
         return;
       } catch (error) {
@@ -2120,11 +2166,13 @@ const sendProgressCard = async ({
           mode: 'card',
           messageId: newMessageId,
           lastSignature: signature,
+          stableSignature,
           title: resolvedTitle,
           latestInput: resolvedLatestInput,
           inputLocked: nextLocked,
           autoDelete: resolvedAutoDelete,
           startedAt,
+          lastUpdatedAt: now,
         });
         return;
       }
@@ -2171,11 +2219,13 @@ const sendProgressCard = async ({
         mode: 'post',
         messageId: newId,
         lastSignature: signature,
+        stableSignature,
         title: resolvedTitle,
         latestInput: resolvedLatestInput,
         inputLocked: nextLocked,
         autoDelete: resolvedAutoDelete,
         startedAt,
+        lastUpdatedAt: now,
       });
       return;
     }
@@ -2186,11 +2236,13 @@ const sendProgressCard = async ({
   progressStates.set(requestKey, {
     mode: 'text',
     lastSignature: signature,
+    stableSignature,
     title: resolvedTitle,
     latestInput: resolvedLatestInput,
     inputLocked: forceInput ? false : lockInput ? true : state?.inputLocked,
     autoDelete: resolvedAutoDelete,
     startedAt,
+    lastUpdatedAt: now,
   });
   if (forceInput) {
     progressInputLocks.delete(requestKey);
@@ -2224,6 +2276,7 @@ const sendArtifactsCard = async ({
   }
 
   const state = progressStates.get(requestKey);
+  const now = Date.now();
   const signature = `artifacts|${cardContent}`;
   if (state?.lastSignature === signature) return true;
 
@@ -2237,9 +2290,11 @@ const sendArtifactsCard = async ({
         mode: 'card',
         messageId: state.messageId,
         lastSignature: signature,
+        stableSignature: signature,
         title: title || state?.title || '执行完成',
         autoDelete: false,
         startedAt: state?.startedAt ?? Date.now(),
+        lastUpdatedAt: now,
       });
       return true;
     } catch (error) {
@@ -2270,9 +2325,11 @@ const sendArtifactsCard = async ({
         mode: 'card',
         messageId: newMessageId,
         lastSignature: signature,
+        stableSignature: signature,
         title: title || '执行完成',
         autoDelete: false,
         startedAt: state?.startedAt ?? Date.now(),
+        lastUpdatedAt: now,
       });
       return true;
     }
@@ -2295,6 +2352,7 @@ const sendDirectReplyCard = async ({ chatId, chatType, messageId, sender, reques
   }
 
   const state = progressStates.get(requestKey);
+  const now = Date.now();
   const signature = `reply|${replyText}`;
   if (state?.lastSignature === signature) return;
 
@@ -2309,8 +2367,10 @@ const sendDirectReplyCard = async ({ chatId, chatType, messageId, sender, reques
         mode: 'card',
         messageId: existingMessageId,
         lastSignature: signature,
+        stableSignature: signature,
         title: '回复',
         autoDelete: false,
+        lastUpdatedAt: now,
       });
       return;
     }
@@ -2329,8 +2389,10 @@ const sendDirectReplyCard = async ({ chatId, chatType, messageId, sender, reques
         mode: 'card',
         messageId: newMessageId,
         lastSignature: signature,
+        stableSignature: signature,
         title: '回复',
         autoDelete: false,
+        lastUpdatedAt: now,
       });
       return;
     }
@@ -3370,6 +3432,8 @@ const runWorkflow = async ({
     startedAt: workflowStartedAt,
     sessionKey,
     userKey,
+    chatId,
+    chatType,
     stage: 'run',
     normalizedText: normalizeRequestText(originText),
   });
@@ -3852,11 +3916,13 @@ const bootstrapProgressState = ({ requestKey, messageId, startedAt }) => {
     mode: 'card',
     messageId,
     lastSignature: '',
+    stableSignature: '',
     title: existing?.title ?? '',
     latestInput: existing?.latestInput ?? '',
     inputLocked: existing?.inputLocked ?? false,
     autoDelete: false,
     startedAt: startedAt || Date.now(),
+    lastUpdatedAt: 0,
   });
 };
 
@@ -3974,6 +4040,14 @@ const startPendingRequest = async (sessionKey) => {
 
   const rawInputText = pending.inputParts.filter(Boolean).join('\n');
   const attachments = pending.attachments;
+
+  logInfo('准备处理请求', {
+    sessionKey,
+    rawInputText,
+    rawInputTextLength: rawInputText.length,
+    inputParts: pending.inputParts,
+    attachmentsCount: attachments.length
+  });
 
   if (!rawInputText && attachments.length === 0) {
     logWarn('空请求内容', { sessionKey });
@@ -4465,8 +4539,27 @@ const handleMessage = async (data) => {
   if (messageType === 'text') {
     const rawText = contentObj.text || '';
     inputText = stripMentions(rawText, mentions);
+  } else if (messageType === 'post') {
+    // Handle rich text "post" messages
+    const content = contentObj.content;
+    if (Array.isArray(content)) {
+      const textParts = [];
+      for (const item of content) {
+        if (Array.isArray(item)) {
+          for (const element of item) {
+            if (element?.tag === 'text' && element?.text) {
+              textParts.push(element.text);
+            } else if (element?.tag === 'a' && element?.text) {
+              textParts.push(element.text);
+            }
+          }
+        }
+      }
+      const rawText = textParts.join('');
+      inputText = stripMentions(rawText, mentions);
+    }
   }
-  logDebug('解析文本', { inputText });
+  logInfo('解析文本完成', { inputText, inputTextLength: inputText.length });
 
   if (inputText && CANCEL_PATTERN.test(inputText)) {
     await handleCancelCommand({ chatId, chatType, messageId, sender });
@@ -4614,12 +4707,31 @@ const handleRetryAction = async ({
 
 const handleCardAction = async (data) => {
   const event = resolveCardEvent(data);
+
+  // 打印完整的事件回调数据
+  logInfo('收到卡片回调事件', {
+    event: redactTokens(event),
+    data: redactTokens(data)
+  });
+
   const action = event?.action ?? {};
   const context = event?.context ?? {};
   const chatId = context.open_chat_id;
   const messageId = context.open_message_id;
   const sender = resolveOperator(event.operator);
-  const chatType = 'group';
+
+  // 根据 chatId 前缀判断 chatType
+  // ou_ 开头是私聊，oc_ 开头是群聊
+  const chatType = chatId?.startsWith('ou_') ? 'p2p' : 'group';
+
+  logInfo('处理卡片回调', {
+    chatId,
+    messageId,
+    chatType,
+    senderId: sender?.id,
+    actionValue: action?.value,
+    contextKeys: Object.keys(context)
+  });
 
   if (!chatId || !messageId) {
     logWarn('卡片回调缺少上下文', {
@@ -4649,11 +4761,13 @@ const handleCardAction = async (data) => {
   });
 
   if (isAbortCardAction(action)) {
+    const execution = activeExecutions.get(requestKey);
+    const actualChatType = execution?.chatType || chatType;
     const result = await cancelByRequestKey({
       requestKey,
       executionId: action?.value?.executionId,
       chatId,
-      chatType,
+      chatType: actualChatType,
       messageId,
       sender,
     });

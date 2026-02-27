@@ -4656,6 +4656,34 @@ const handleRetryAction = async ({
   retryContexts.delete(requestKey);
 
   if (retryType === CARD_RETRY_RUN_ACTION) {
+    const runArgs = context.runArgs;
+    if (!runArgs?.canvasId) {
+      return { toast: { type: 'error', content: '重试参数不完整' } };
+    }
+    // 先返回 toast，避免飞书卡片回调 3 秒超时
+    (async () => {
+      await sendProgressCard({
+        chatId,
+        chatType,
+        messageId,
+        sender,
+        requestKey,
+        title: '准备重试',
+        statusText: '重试中',
+        stageText: '执行中',
+        etaText: '即将开始',
+        summaryText: '已开始重试执行，请稍候...',
+        showAbort: false,
+      });
+      await runWorkflow({ ...runArgs, requestKey });
+    })().catch((error) => {
+      logWarn('重试执行失败', { error: formatErrorDetails(error), requestKey });
+    });
+    return { toast: { type: 'info', content: '已开始重试' } };
+  }
+
+  // 先返回 toast，避免飞书卡片回调 3 秒超时
+  (async () => {
     await sendProgressCard({
       chatId,
       chatType,
@@ -4664,43 +4692,24 @@ const handleRetryAction = async ({
       requestKey,
       title: '准备重试',
       statusText: '重试中',
-      stageText: '执行中',
+      stageText: '生成Skills',
       etaText: '即将开始',
-      summaryText: '已开始重试执行，请稍候...',
+      summaryText: '已开始重试生成，请稍候...',
       showAbort: false,
     });
-    const runArgs = context.runArgs;
-    if (!runArgs?.canvasId) {
-      return { toast: { type: 'error', content: '重试参数不完整' } };
-    }
-    await runWorkflow({ ...runArgs, requestKey });
-    return { toast: { type: 'info', content: '已开始重试' } };
-  }
-
-  await sendProgressCard({
-    chatId,
-    chatType,
-    messageId,
-    sender,
-    requestKey,
-    title: '准备重试',
-    statusText: '重试中',
-    stageText: '生成Skills',
-    etaText: '即将开始',
-    summaryText: '已开始重试生成，请稍候...',
-    showAbort: false,
-  });
-
-  await enqueueRequest({
-    chatId: context.chatId,
-    chatType: context.chatType,
-    messageId: context.messageId,
-    sender: context.sender,
-    inputText: context.inputText,
-    attachments: context.attachments || [],
-    requestKey,
-    skipLoading: true,
-    sessionKeyOverride: context.sessionKey,
+    await enqueueRequest({
+      chatId: context.chatId,
+      chatType: context.chatType,
+      messageId: context.messageId,
+      sender: context.sender,
+      inputText: context.inputText,
+      attachments: context.attachments || [],
+      requestKey,
+      skipLoading: true,
+      sessionKeyOverride: context.sessionKey,
+    });
+  })().catch((error) => {
+    logWarn('重试生成失败', { error: formatErrorDetails(error), requestKey });
   });
   return { toast: { type: 'info', content: '已开始重试' } };
 };
@@ -4815,48 +4824,46 @@ const handleCardAction = async (data) => {
     return { toast: { type: 'warning', content: '未找到可中止的任务' } };
   }
 
-  const cardData = buildProgressCardData({
-    title: '已收到补充',
-    statusText: '处理中',
-    stageText: '需求澄清',
-    etaText: '即将开始',
-    summaryText: '已收到补充内容，正在处理。',
-    requestId: requestKey,
-    showInput: false,
-    showAbort: false,
-    latestInput: inputText,
+  // 先返回 toast 响应，避免飞书卡片回调 3 秒超时
+  const submitTask = async () => {
+    await sendProgressCard({
+      chatId,
+      chatType,
+      messageId,
+      sender,
+      requestKey,
+      title: '已收到补充',
+      statusText: '处理中',
+      stageText: '需求澄清',
+      etaText: '即将开始',
+      summaryText: '已收到补充内容，正在处理。',
+      showInput: false,
+      showAbort: false,
+      latestInput: inputText,
+      lockInput: true,
+    });
+    await enqueueRequest({
+      chatId,
+      chatType,
+      messageId,
+      sender,
+      inputText,
+      attachments: [],
+      requestKey,
+      skipLoading: true,
+      sessionKeyOverride: extractSessionKeyFromRequestKey(requestKey),
+    });
+  };
+
+  submitTask().catch((error) => {
+    logWarn('处理卡片补充失败', {
+      error: formatErrorDetails(error),
+      requestKey,
+    });
   });
 
-  await sendProgressCard({
-    chatId,
-    chatType,
-    messageId,
-    sender,
-    requestKey,
-    title: '已收到补充',
-    statusText: '处理中',
-    stageText: '需求澄清',
-    etaText: '即将开始',
-    summaryText: '已收到补充内容，正在处理。',
-    showInput: false,
-    showAbort: false,
-    latestInput: inputText,
-    lockInput: true,
-  });
-  await enqueueRequest({
-    chatId,
-    chatType,
-    messageId,
-    sender,
-    inputText,
-    attachments: [],
-    requestKey,
-    skipLoading: true,
-    sessionKeyOverride: extractSessionKeyFromRequestKey(requestKey),
-  });
   return {
     toast: { type: 'success', content: '已收到补充内容' },
-    card: { type: 'raw', data: cardData },
   };
 };
 
